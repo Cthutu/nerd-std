@@ -1,0 +1,12 @@
+--
+--| Nerd Standard Library
+--| Windows OS module
+--
+-- Copyright (C) 2026 Matt Davies, all rights reserved.
+--
+
+on "windows" {
+
+    pub use kernel32
+
+}

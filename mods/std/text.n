@@ -1,0 +1,206 @@
+--
+--| Nerd Standard Library
+--| Text handling and Unicode support
+--
+-- Copyright (C) 2026 Matt Davies, all rights reserved.
+--
+
+-- Represents a validated Unicode scalar value
+Rune :: u32
+
+impl Rune {
+
+    -- Returns true if the Rune is an ASCII character (U+0000 to U+007F)    
+    pub is_ascii :: fn (r: Self) -> bool {
+        return r <= 0x7f
+    }
+
+    -- Returns the number of bytes required to encode the Rune in UTF-8. Returns
+    -- 0 if the value is an invalid Unicode scalar.
+    pub utf8_length :: fn (r: Self) -> usize {
+        return on r {
+            <= 0x7f      => 1
+            <= 0x7ff     => 2
+            <= 0xffff    => 3
+            <= 0x10ffff  => 4
+
+            else => ${
+                assert no, "Invalid Unicode scalar value"
+                break 0
+            }
+        }
+    }
+
+}
+
+test "Rune.is_ascii" {
+    assert 0x41.as(Rune).is_ascii() == yes, "Expected 0x41 to be ASCII"
+    assert 0x7f.as(Rune).is_ascii() == yes, "Expected 0x7f to be ASCII"
+    assert 0x80.as(Rune).is_ascii() == no, "Expected 0x80 to be non-ASCII"
+}
+
+test "Rune.utf8_length" {
+    assert 0x24.as(Rune).utf8_length() == 1,
+        "Expected 0x24 to have UTF-8 length of 1"
+    assert 0xa2.as(Rune).utf8_length() == 2,
+        "Expected 0xa2 to have UTF-8 length of 2"
+    assert 0x20ac.as(Rune).utf8_length() == 3,
+        "Expected 0x20ac to have UTF-8 length of 3"
+    assert 0x10348.as(Rune).utf8_length() == 4,
+        "Expected 0x10348 to have UTF-8 length of 4"
+}
+
+-- Represents an error that occurs after a UTF-8 operation
+pub Utf8Error :: enum {
+    InvalidByteSequence
+    UnexpectedEndOfInput
+}
+
+-- Validates that a string is valid UTF-8.  Returns an error if the string is not
+-- valid UTF-8.
+pub utf8_validate :: fn (s: string) -> void\Utf8Error {
+    i : usize = 0
+    for i < s.bytes {
+        (r, size) := utf8_decode(s[i..].as([]u8))
+        on r == 0xfffd => {
+            return InvalidByteSequence!
+        }
+        i += size
+    }
+}
+
+-- Decodes a UTF-8 encoded byte slice into a Rune and returns the Rune and the
+-- number of bytes consumed.  If the byte slice is not valid UTF-8, returns the
+-- replacement character (U+FFFD) and the number of bytes as 0.
+pub utf8_decode :: fn (bytes: []u8) -> (Rune, usize) {
+    on bytes.count == 0 => {
+        return (0xfffd.as(Rune), 0)
+    }
+
+    first_byte := bytes[0]
+
+    return on first_byte {
+        <= 0x7f => (first_byte.as(Rune), 1)
+
+        <= 0xdf => ${
+            break on bytes.count < 2 => ${
+                break (0xfffd.as(Rune), 1)
+            } else {
+                second_byte := bytes[1]
+                on second_byte < 0x80 ||
+                    second_byte > 0xbf => ${
+                    break (0xfffd.as(Rune), 1)
+                }
+                r := ((first_byte & 0x1f) << 6) | (second_byte & 0x3f)
+                break (r.as(Rune), 2)
+            }
+        }
+
+        <= 0xef => ${
+            break on bytes.count < 3 => ${
+                break (0xfffd.as(Rune), 1)
+            } else {
+                second_byte := bytes[1]
+                third_byte := bytes[2]
+                on second_byte < 0x80 ||
+                    second_byte > 0xbf ||
+                    third_byte < 0x80 ||
+                    third_byte > 0xbf => ${
+                    break (0xfffd.as(Rune), 1)
+                }
+                r := ((first_byte & 0x0f) << 12) | ((second_byte & 0x3f) << 6) | (third_byte & 0x3f)
+                break (r.as(Rune), 3)
+            }
+        }
+
+        <= 0xf7 => ${
+            break on bytes.count < 4 => ${
+                break (0xfffd.as(Rune), 1)
+            } else {
+                second_byte := bytes[1]
+                third_byte := bytes[2]
+                fourth_byte := bytes[3]
+                on second_byte < 0x80 ||
+                    second_byte > 0xbf ||
+                    third_byte < 0x80 ||
+                    third_byte > 0xbf ||
+                    fourth_byte < 0x80 ||
+                    fourth_byte > 0xbf => ${
+                    break (0xfffd.as(Rune), 1)
+                }
+                r := ((first_byte & 0x07) << 18) | ((second_byte & 0x3f) << 12) | ((third_byte & 0x3f) << 6) | (fourth_byte & 0x3f)
+                break (r.as(Rune), 4)
+            }
+        }
+
+        else => (0xfffd.as(Rune), 1)
+    }
+}
+
+impl string {
+
+    -- Return true if the string is empty.
+    pub is_empty :: fn (s: Self) -> bool {
+        return s.bytes == 0
+    }
+
+    -- Return true if the string starts with the given prefix string.
+    pub starts_with :: fn (s: Self, prefix: string) -> bool {
+        on !utf8_validate(s) => {
+            return no
+        }
+        on !utf8_validate(prefix) => {
+            return no
+        }
+
+        on s.bytes < prefix.bytes => {
+            return no
+        }
+
+        for i in [0 .. prefix.bytes] {
+            on s[i] != prefix[i] => {
+                return no
+            }
+        }
+
+        return yes
+    }
+
+    -- Return true if the string ends with the given suffix string.
+    pub ends_with :: fn (s: Self, suffix: string) -> bool {
+        on !utf8_validate(s) => {
+            return no
+        }
+        on !utf8_validate(suffix) => {
+            return no
+        }
+
+        on s.bytes < suffix.bytes => {
+            return no
+        }
+
+        offset := s.bytes - suffix.bytes
+        for i in [0 .. suffix.bytes] {
+            on s[offset + i] != suffix[i] => {
+                return no
+            }
+        }
+
+        return yes
+    }
+
+}
+
+test "string.is_empty" {
+    assert "".is_empty() == yes, "Expected empty string to be empty"
+    assert "hello".is_empty() == no, "Expected non-empty string to not be empty"
+}
+
+test "string.starts_with" {
+    assert "hello".starts_with("he") == yes,
+        "Expected 'hello' to start with 'he'"
+    assert "hello".starts_with("lo") == no,
+        "Expected 'hello' to not start with 'lo'"
+    assert "hello".starts_with("hello world") == no,
+        "Expected 'hello' to not start with longer string"
+}

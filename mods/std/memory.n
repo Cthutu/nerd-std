@@ -1,0 +1,249 @@
+--
+--| Nerd Standard Library
+--| Memory management
+--
+-- Copyright (C) 2026 Matt Davies, all rights reserved.
+--
+
+use os.windows
+
+-- Copy bytes from one location to another
+copy :: fn (src: []u8, dst: []u8) -> usize {
+    assert src.count == dst.count,
+        "Source and destination arrays must be of "
+        +"the same size"
+
+    on "windows" {
+        src_pointer := src.data
+        dst_pointer := dst.data
+        length := src.bytes
+
+        CopyMemory(dst_pointer, src_pointer, length)
+        return length
+    }
+}
+
+test "copy" {
+    src : [5]u8 = [1, 2, 3, 4, 5]
+    dst : [5]u8 = [0, 0, 0, 0, 0]
+
+    bytes_copied := copy(src, dst)
+    assert bytes_copied == 5,
+        "Expected 5 bytes to be copied, but got {bytes_copied}"
+    assert dst[0] == 1 && dst[1] == 2 && dst[2] == 3 && dst[3] == 4 && dst[4] == 5,
+        "Expected destination array to contain the copied bytes"
+}
+
+-- Move bytes from one location to another.  Will deal with overlapping memory
+-- areas by choosing the correct direction to copy.
+move :: fn (src: []u8, dst: []u8) -> usize {
+    assert src.count == dst.count,
+        "Source and destination arrays must be of "
+        +"the same size"
+
+    on "windows" {
+        src_pointer := src.data
+        dst_pointer := dst.data
+        length := src.bytes
+
+        MoveMemory(dst_pointer, src_pointer, length)
+        return length
+    }
+}
+
+test "move-forward" {
+    data : []u8 = [1, 2, 3, 4, 5, 6, 7]
+    src := data[0..5]  -- [1, 2, 3, 4, 5]
+    dst := data[2..7]  -- [3, 4, 5, 6, 7]
+
+    bytes_moved := move(src, dst)
+    assert bytes_moved == 5,
+        "Expected 5 bytes to be moved, but got {bytes_moved}"
+    assert data == [1, 2, 1, 2, 3, 4, 5],
+        "Expected data array to contain the moved bytes"
+}
+
+test "move-backward" {
+    data : []u8 = [1, 2, 3, 4, 5, 6, 7]
+    src := data[2..7]  -- [3, 4, 5, 6, 7]
+    dst := data[0..5]  -- [1, 2, 3, 4, 5]
+
+    bytes_moved := move(src, dst)
+    assert bytes_moved == 5,
+        "Expected 5 bytes to be moved, but got {bytes_moved}"
+    assert data == [3, 4, 5, 6, 7, 6, 7],
+        "Expected data array to contain the moved bytes"
+}
+
+-- Fill an area of bytes with a particular byte value
+fill :: fn (dst: []u8, value: u8) -> usize {
+    on "windows" {
+        dst_pointer := dst.data
+        length := dst.bytes
+
+        FillMemory(dst_pointer, length, value)
+        return length
+    }
+}
+
+test "fill" {
+    data : [5]u8 = [0, 0, 0, 0, 0]
+
+    bytes_filled := fill(data, 42)
+    assert bytes_filled == 5,
+        "Expected 5 bytes to be filled, but got {bytes_filled}"
+    assert data == [42, 42, 42, 42, 42],
+        "Expected data array to contain the filled bytes"
+}
+
+-- Zero an area of bytes
+zero :: fn (dst: []u8) -> usize {
+    on "windows" {
+        dst_pointer := dst.data
+        length := dst.bytes
+
+        FillMemory(dst_pointer, length, 0)
+        return length
+    }
+}
+
+test "zero" {
+    data : [5]u8 = [1, 2, 3, 4, 5]
+
+    bytes_zeroed := zero(data)
+    assert bytes_zeroed == 5,
+        "Expected 5 bytes to be zeroed, but got {bytes_zeroed}"
+    assert data == [0, 0, 0, 0, 0],
+        "Expected data array to contain the zeroed bytes"
+}
+
+-- Compare two slices for equality
+equal :: fn (a: []u8, b: []u8) -> bool {
+    on a.size != b.size => {
+        return no
+    }
+
+    for i in [0 .. a.count] {
+        on a[i] != b[i] => {
+            return no
+        }
+    }
+
+    return yes
+}
+
+test "equal" {
+    a : [5]u8 = [1, 2, 3, 4, 5]
+    b : [5]u8 = [1, 2, 3, 4, 5]
+    c : [5]u8 = [1, 2, 3, 4, 6]
+    d : [4]u8 = [1, 2, 3, 4]
+
+    assert equal(a, b), "Expected a and b to be equal"
+    assert !equal(a, c), "Expected a and c to be not equal"
+    assert !equal(a, d), "Expected a and d to be not equal"
+}
+
+-- Compare two slices, returning the the difference of the first different bytes
+-- (first - last), otherwise return 0.
+compare :: fn (a: []u8, b: []u8) -> i32 {
+    min_count := on a.count < b.count => ${
+        break a.count
+    } else ${
+        break b.count
+    }
+    on {
+        a.count == 0 && a.count == 0  => return 0
+        a.count == 0                  => return -(b[0].as(i32))
+        b.count == 0                  => return a[0].as(i32)
+        a.count > min_count           => return a[min_count].as(i32)
+        b.count > min_count           => return -(b[min_count].as(i32))
+        else => {
+            for i in [0 .. min_count] {
+                aa := a[i].as(i32)
+                bb := b[i].as(i32)
+
+                on aa != bb => {
+                    return aa - bb
+                }
+            }
+            return 0
+        }
+    }
+}
+
+test "compare" {
+    a      : [5]u8 = [1, 2, 3, 4, 5]
+    b      : [5]u8 = [1, 2, 3, 4, 5]
+    higher : [5]u8 = [1, 2, 4, 4, 5]
+    prefix : [3]u8 = [1, 2, 3]
+    empty  : [0]u8 = []
+
+    assert compare(a, b) == 0, "Expected equal slices to compare as 0"
+    assert compare(higher, a) == 1,
+        "Expected the first differing byte to produce a positive result"
+    assert compare(a, higher) == -1,
+        "Expected the first differing byte to produce a negative result"
+    assert compare(a, prefix) == 4,
+        "Expected the first byte after a shared prefix"
+    assert compare(prefix, a) == -4,
+        "Expected a shorter shared prefix to compare negatively"
+    assert compare(empty, empty) == 0,
+        "Expected empty slices to compare as equal"
+}
+
+-- Compares the start of given data with the prefix
+starts_with :: fn (data: []u8, prefix: []u8) -> bool {
+    on data.count < prefix.count => {
+        return no
+    }
+
+    for i in [0 .. prefix.count] {
+        on data[i] != prefix[i] => {
+            return no
+        }
+    }
+
+    return yes
+}
+
+test "starts_with" {
+    data   : [5]u8 = [1, 2, 3, 4, 5]
+    prefix : [3]u8 = [1, 2, 3]
+    wrong  : [3]u8 = [1, 2, 4]
+    longer : [6]u8 = [1, 2, 3, 4, 5, 6]
+
+    assert starts_with(data, prefix),
+        "Expected data to start with the given prefix"
+    assert !starts_with(data, wrong),
+        "Expected data to not start with the wrong prefix"
+    assert !starts_with(data, longer),
+        "Expected data to not start with a longer prefix"
+}
+
+ends_with :: fn (data: []u8, suffix: []u8) -> bool {
+    on data.count < suffix.count => {
+        return no
+    }
+
+    offset := data.count - suffix.count
+    for i in [0 .. suffix.count] {
+        on data[offset + i] != suffix[i] => {
+            return no
+        }
+    }
+
+    return yes
+}
+
+test "ends_with" {
+    data   : [5]u8 = [1, 2, 3, 4, 5]
+    suffix : [3]u8 = [3, 4, 5]
+    wrong  : [3]u8 = [2, 3, 4]
+    longer : [6]u8 = [0, 1, 2, 3, 4, 5]
+
+    assert ends_with(data, suffix), "Expected data to end with the given suffix"
+    assert !ends_with(data, wrong),
+        "Expected data to not end with the wrong suffix"
+    assert !ends_with(data, longer),
+        "Expected data to not end with a longer suffix"
+}
