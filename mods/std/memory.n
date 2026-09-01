@@ -16,9 +16,20 @@ copy :: fn (src: []u8, dst: []u8) -> usize {
     on "windows" {
         src_pointer := src.data
         dst_pointer := dst.data
-        length := src.bytes
+        length      := src.bytes
 
         CopyMemory(dst_pointer, src_pointer, length)
+        return length
+    }
+
+    on "linux" {
+        src_pointer := src.data
+        dst_pointer := dst.data
+        length      := src.bytes
+
+        for i in [0 .. length] {
+            dst_pointer[i] = src_pointer[i]
+        }
         return length
     }
 }
@@ -44,17 +55,34 @@ move :: fn (src: []u8, dst: []u8) -> usize {
     on "windows" {
         src_pointer := src.data
         dst_pointer := dst.data
-        length := src.bytes
+        length      := src.bytes
 
         MoveMemory(dst_pointer, src_pointer, length)
+        return length
+    }
+
+    on "linux" {
+        src_pointer := src.data
+        dst_pointer := dst.data
+        length      := src.bytes
+
+        on dst_pointer < src_pointer => {
+            for i in [0 .. length] {
+                dst_pointer[i] = src_pointer[i]
+            }
+        } else {
+            for i in [0 .. length] {
+                dst_pointer[length - 1 - i] = src_pointer[length - 1 - i]
+            }
+        }
         return length
     }
 }
 
 test "move-forward" {
     data : []u8 = [1, 2, 3, 4, 5, 6, 7]
-    src := data[0..5]  -- [1, 2, 3, 4, 5]
-    dst := data[2..7]  -- [3, 4, 5, 6, 7]
+    src         := data[0..5]  -- [1, 2, 3, 4, 5]
+    dst         := data[2..7]  -- [3, 4, 5, 6, 7]
 
     bytes_moved := move(src, dst)
     assert bytes_moved == 5,
@@ -65,8 +93,8 @@ test "move-forward" {
 
 test "move-backward" {
     data : []u8 = [1, 2, 3, 4, 5, 6, 7]
-    src := data[2..7]  -- [3, 4, 5, 6, 7]
-    dst := data[0..5]  -- [1, 2, 3, 4, 5]
+    src         := data[2..7]  -- [3, 4, 5, 6, 7]
+    dst         := data[0..5]  -- [1, 2, 3, 4, 5]
 
     bytes_moved := move(src, dst)
     assert bytes_moved == 5,
@@ -79,9 +107,19 @@ test "move-backward" {
 fill :: fn (dst: []u8, value: u8) -> usize {
     on "windows" {
         dst_pointer := dst.data
-        length := dst.bytes
+        length      := dst.bytes
 
         FillMemory(dst_pointer, length, value)
+        return length
+    }
+
+    on "linux" {
+        dst_pointer := dst.data
+        length      := dst.bytes
+
+        for i in [0 .. length] {
+            dst_pointer[i] = value
+        }
         return length
     }
 }
@@ -100,9 +138,19 @@ test "fill" {
 zero :: fn (dst: []u8) -> usize {
     on "windows" {
         dst_pointer := dst.data
-        length := dst.bytes
+        length      := dst.bytes
 
         FillMemory(dst_pointer, length, 0)
+        return length
+    }
+
+    on "linux" {
+        dst_pointer := dst.data
+        length      := dst.bytes
+
+        for i in [0 .. length] {
+            dst_pointer[i] = 0
+        }
         return length
     }
 }
@@ -119,14 +167,10 @@ test "zero" {
 
 -- Compare two slices for equality
 equal :: fn (a: []u8, b: []u8) -> bool {
-    on a.size != b.size => {
-        return no
-    }
+    on a.size != b.size => return no
 
     for i in [0 .. a.count] {
-        on a[i] != b[i] => {
-            return no
-        }
+        on a[i] != b[i] => return no
     }
 
     return yes
@@ -162,9 +206,7 @@ compare :: fn (a: []u8, b: []u8) -> i32 {
                 aa := a[i].as(i32)
                 bb := b[i].as(i32)
 
-                on aa != bb => {
-                    return aa - bb
-                }
+                on aa != bb => return aa - bb
             }
             return 0
         }
@@ -193,14 +235,10 @@ test "compare" {
 
 -- Compares the start of given data with the prefix
 starts_with :: fn (data: []u8, prefix: []u8) -> bool {
-    on data.count < prefix.count => {
-        return no
-    }
+    on data.count < prefix.count => return no
 
     for i in [0 .. prefix.count] {
-        on data[i] != prefix[i] => {
-            return no
-        }
+        on data[i] != prefix[i] => return no
     }
 
     return yes
@@ -221,15 +259,11 @@ test "starts_with" {
 }
 
 ends_with :: fn (data: []u8, suffix: []u8) -> bool {
-    on data.count < suffix.count => {
-        return no
-    }
+    on data.count < suffix.count => return no
 
     offset := data.count - suffix.count
     for i in [0 .. suffix.count] {
-        on data[offset + i] != suffix[i] => {
-            return no
-        }
+        on data[offset + i] != suffix[i] => return no
     }
 
     return yes
