@@ -5,17 +5,22 @@
 -- Copyright (C) 2026 Matt Davies, all rights reserved.
 --
 
-pub contains :: fn [T] (slice: []T, value: T) -> bool {
-    for i in [0 .. slice.count] {
-        on slice[i] == value => return yes
+impl [T] []T
+where T: Eq {
+
+    pub contains :: fn (s: Self, value: T) -> bool {
+        for i in [0 .. s.count] {
+            on s[i] == value => return yes
+        }
+        return no
     }
-    return no
+
 }
 
 test "contains" {
-    assert contains([1, 2, 3], 2) == yes, "Expected 2 to be in the slice"
-    assert contains([1, 2, 3], 4) == no, "Expected 4 to not be in the slice"
-    assert contains([], 1) == no, "Expected 1 to not be in the empty slice"
-    assert contains([1], 1) == yes, "Expected 1 to be in the slice"
-    assert contains([1, 2, 3, 4, 5], 5) == yes, "Expected 5 to be in the slice"
+    assert [1, 2, 3].contains(2) == yes, "Expected 2 to be in the slice"
+    assert [1, 2, 3].contains(4) == no, "Expected 4 to not be in the slice"
+    assert [].contains(1) == no, "Expected 1 to not be in the empty slice"
+    assert [1].contains(1) == yes, "Expected 1 to be in the slice"
+    assert [1, 2, 3, 4, 5].contains(5) == yes, "Expected 5 to be in the slice"
 }
