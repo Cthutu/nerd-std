@@ -15,6 +15,10 @@ impl Rune {
         return r <= 0x7f
     }
 
+    pub is_valid :: fn (r: Self) -> bool {
+        return r <= 0x10ffff && (r < 0xd800 || r > 0xdfff)
+    }
+
     -- Returns the number of bytes required to encode the Rune in UTF-8. Returns
     -- 0 if the value is an invalid Unicode scalar.
     pub utf8_length :: fn (r: Self) -> usize {
@@ -37,6 +41,15 @@ test "Rune.is_ascii" {
     assert 0x41.as(Rune).is_ascii() == yes, "Expected 0x41 to be ASCII"
     assert 0x7f.as(Rune).is_ascii() == yes, "Expected 0x7f to be ASCII"
     assert 0x80.as(Rune).is_ascii() == no, "Expected 0x80 to be non-ASCII"
+}
+
+test "Rune.is_valid" {
+    assert 0x41.as(Rune).is_valid() == yes, "Expected 0x41 to be valid"
+    assert 0xd7ff.as(Rune).is_valid() == yes, "Expected 0xd7ff to be valid"
+    assert 0xe000.as(Rune).is_valid() == yes, "Expected 0xe000 to be valid"
+    assert 0x10ffff.as(Rune).is_valid() == yes, "Expected 0x10ffff to be valid"
+    assert 0xd800.as(Rune).is_valid() == no, "Expected 0xd800 to be invalid"
+    assert 0x110000.as(Rune).is_valid() == no, "Expected 0x110000 to be invalid"
 }
 
 test "Rune.utf8_length" {
@@ -62,9 +75,7 @@ pub utf8_validate :: fn (s: string) -> void\Utf8Error {
     i : usize = 0
     for i < s.bytes {
         (r, size) := utf8_decode(s[i..].as([]u8))
-        on r == 0xfffd => {
-            return InvalidByteSequence!
-        }
+        on r == 0xfffd => return InvalidByteSequence!
         i += size
     }
 }
@@ -73,9 +84,7 @@ pub utf8_validate :: fn (s: string) -> void\Utf8Error {
 -- number of bytes consumed.  If the byte slice is not valid UTF-8, returns the
 -- replacement character (U+FFFD) and the number of bytes as 0.
 pub utf8_decode :: fn (bytes: []u8) -> (Rune, usize) {
-    on bytes.count == 0 => {
-        return (0xfffd.as(Rune), 0)
-    }
+    on bytes.count == 0 => return (0xfffd.as(Rune), 0)
 
     first_byte := bytes[0]
 
@@ -101,7 +110,8 @@ pub utf8_decode :: fn (bytes: []u8) -> (Rune, usize) {
                 break (0xfffd.as(Rune), 1)
             } else {
                 second_byte := bytes[1]
-                third_byte := bytes[2]
+                third_byte  := bytes[2]
+
                 on second_byte < 0x80 ||
                     second_byte > 0xbf ||
                     third_byte < 0x80 ||
@@ -118,8 +128,9 @@ pub utf8_decode :: fn (bytes: []u8) -> (Rune, usize) {
                 break (0xfffd.as(Rune), 1)
             } else {
                 second_byte := bytes[1]
-                third_byte := bytes[2]
+                third_byte  := bytes[2]
                 fourth_byte := bytes[3]
+
                 on second_byte < 0x80 ||
                     second_byte > 0xbf ||
                     third_byte < 0x80 ||
@@ -146,21 +157,13 @@ impl string {
 
     -- Return true if the string starts with the given prefix string.
     pub starts_with :: fn (s: Self, prefix: string) -> bool {
-        on !utf8_validate(s) => {
-            return no
-        }
-        on !utf8_validate(prefix) => {
-            return no
-        }
+        on !utf8_validate(s)      => return no
+        on !utf8_validate(prefix) => return no
 
-        on s.bytes < prefix.bytes => {
-            return no
-        }
+        on s.bytes < prefix.bytes => return no
 
         for i in [0 .. prefix.bytes] {
-            on s[i] != prefix[i] => {
-                return no
-            }
+            on s[i] != prefix[i] => return no
         }
 
         return yes
@@ -168,22 +171,14 @@ impl string {
 
     -- Return true if the string ends with the given suffix string.
     pub ends_with :: fn (s: Self, suffix: string) -> bool {
-        on !utf8_validate(s) => {
-            return no
-        }
-        on !utf8_validate(suffix) => {
-            return no
-        }
+        on !utf8_validate(s)      => return no
+        on !utf8_validate(suffix) => return no
 
-        on s.bytes < suffix.bytes => {
-            return no
-        }
+        on s.bytes < suffix.bytes => return no
 
         offset := s.bytes - suffix.bytes
         for i in [0 .. suffix.bytes] {
-            on s[offset + i] != suffix[i] => {
-                return no
-            }
+            on s[offset + i] != suffix[i] => return no
         }
 
         return yes
