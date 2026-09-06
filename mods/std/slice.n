@@ -10,7 +10,7 @@ where T: Eq {
 
     pub contains :: fn (s: ^Self, value: T) -> bool {
         for i in [0 .. s.count] {
-            on (s^)[i] == value => return yes
+            on s^[i] == value => return yes
         }
         return no
     }
