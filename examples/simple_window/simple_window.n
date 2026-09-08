@@ -1,0 +1,44 @@
+use std.frame
+
+main :: fn () {
+    system := FrameSystem.init()
+    defer system.done()
+
+    frame := {
+        id          : NEW_FRAME
+        width       : 800
+        height      : 600
+        title       : "Simple Window"
+        full_screen : no
+        resizable   : yes
+        ...
+    }
+
+    system.apply(^frame)
+
+    for system.loop() {
+        system.update(^frame)
+
+        on system.poll(^frame) {
+            None => {
+            }
+
+            Closed => {
+            }
+
+            KeyPress { scan_code } => {
+                on scan_code {
+                    Escape  => system.destroy(^frame)
+                    Q       => system.destroy(^frame)
+
+                    Enter => {
+                        on system.is_alt_down() => {
+                            frame.full_screen = !frame.full_screen
+                            system.apply(^frame)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

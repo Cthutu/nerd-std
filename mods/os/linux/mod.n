@@ -406,4 +406,21 @@ on "linux" {
             "Expected the getpid syscall to return a positive process ID"
     }
 
+    pub CLOCK_MONOTONIC :: 1  -- Linux clock identifier for monotonic time.
+
+    -- Represents the Linux timespec structure.
+    pub TimeSpec :: plex #c {
+        tv_sec  i64  -- Whole seconds.
+        tv_nsec i64  -- Additional nanoseconds.
+    }
+
+    -- Reads a Linux clock into a TimeSpec.
+    pub sys_clock_gettime :: fn (clock_id: i32, time: ^TimeSpec) => syscall(SYS_CLOCK_GETTIME, clock_id.as(u64), time.as(usize).as(u64), 0, 0, 0, 0).as(i32)
+
+    -- Sleeps for the requested duration, reporting time remaining if interrupted.
+    pub sys_nanosleep :: fn (request: ^TimeSpec, remaining: ^TimeSpec) => syscall(SYS_NANOSLEEP, request.as(usize).as(u64), remaining.as(usize).as(u64), 0, 0, 0, 0).as(i32)
+
+    pub use glx
+    pub use x11
+
 }

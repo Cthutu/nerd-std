@@ -1,0 +1,32 @@
+-- Nerd Standard Library (NSL)
+--
+-- Copyright (c) 2026 Matt Davies
+--
+-- Provides Linux GLX bindings. Higher-level OpenGL commands and command loading
+-- live in `std.opengl`.
+
+on "linux" {
+
+    use x11
+
+    -- Opaque GLX rendering context handle.
+    pub GLXContext :: ^void
+
+    -- GLX drawable handle. The current frame backend renders directly to X11
+    -- windows.
+    pub GLXDrawable :: XWindow
+
+    ffi "GL" {
+        pub glXCreateContext  (display    : XDisplay,
+                               visual     : ^XVisualInfo,
+                               share_list : GLXContext,
+                               direct     : i32) -> GLXContext
+        pub glXMakeCurrent    (display  : XDisplay,
+                               drawable : GLXDrawable,
+                               context  : GLXContext) -> i32
+        pub glXDestroyContext (display: XDisplay, context: GLXContext)
+        pub glXGetProcAddress (name: ^i8) -> ^void
+        pub glXSwapBuffers    (display: XDisplay, drawable: GLXDrawable)
+    }
+
+}
