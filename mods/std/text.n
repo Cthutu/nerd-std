@@ -6,15 +6,16 @@
 --
 
 -- Represents a validated Unicode scalar value
-Rune :: u32
+pub Rune :: u32
 
 impl Rune {
 
-    -- Returns true if the Rune is an ASCII character (U+0000 to U+007F)    
+    -- Returns true if the Rune is an ASCII character (U+0000 to U+007F)
     pub is_ascii :: fn (r: Self) -> bool {
         return r <= 0x7f
     }
 
+    -- Returns true if the Rune is a valid Unicode scalar value.
     pub is_valid :: fn (r: Self) -> bool {
         return r <= 0x10ffff && (r < 0xd800 || r > 0xdfff)
     }
@@ -22,17 +23,68 @@ impl Rune {
     -- Returns the number of bytes required to encode the Rune in UTF-8. Returns
     -- 0 if the value is an invalid Unicode scalar.
     pub utf8_length :: fn (r: Self) -> usize {
+        on !r.is_valid() => return 0
+
         return on r {
             <= 0x7f      => 1
             <= 0x7ff     => 2
             <= 0xffff    => 3
             <= 0x10ffff  => 4
+            else => 0
+        }
+    }
 
-            else => ${
-                assert no, "Invalid Unicode scalar value"
-                break 0
+    -- Encodes the Rune into output and returns the number of bytes written.
+    -- Invalid scalar values are encoded as the replacement character (U+FFFD).
+    -- Returns zero without writing when `output` is too small.
+    pub utf8_encode :: fn (r: Self, output: []u8) -> usize {
+        value  := on r.is_valid() => r else 0xfffd.as(Rune)
+        needed := value.utf8_length()
+
+        on output.count < needed => return 0
+
+        on needed {
+            1 => {
+                output[0] = value.as(u8)
+            }
+
+            2 => {
+                output[0] = (0xc0 | (value >> 6)).as(u8)
+                output[1] = (0x80 | (value & 0x3f)).as(u8)
+            }
+
+            3 => {
+                output[0] = (0xe0 | (value >> 12)).as(u8)
+                output[1] = (0x80 | ((value >> 6) & 0x3f)).as(u8)
+                output[2] = (0x80 | (value & 0x3f)).as(u8)
+            }
+
+            else => {
+                output[0] = (0xf0 | (value >> 18)).as(u8)
+                output[1] = (0x80 | ((value >> 12) & 0x3f)).as(u8)
+                output[2] = (0x80 | ((value >> 6) & 0x3f)).as(u8)
+                output[3] = (0x80 | (value & 0x3f)).as(u8)
             }
         }
+
+        return needed
+    }
+
+    -- Returns the terminal display width of the Rune using the supported
+    -- wide-character ranges. Control characters have zero width.
+    pub display_width :: fn (r: Self) -> i32 {
+        on r == 0                            => return 0
+        on r < 32 || (r >= 0x7f && r < 0xa0) => return 0
+        on r >= 0x1100 && r <= 0x115f        => return 2
+        on r == 0x2329 || r == 0x232a        => return 2
+        on r >= 0x2e80 && r <= 0xa4cf        => return 2
+        on r >= 0xac00 && r <= 0xd7a3        => return 2
+        on r >= 0xf900 && r <= 0xfaff        => return 2
+        on r >= 0xfe10 && r <= 0xfe19        => return 2
+        on r >= 0xfe30 && r <= 0xfe6f        => return 2
+        on r >= 0xff00 && r <= 0xff60        => return 2
+        on r >= 0xffe0 && r <= 0xffe6        => return 2
+        return 1
     }
 
 }
@@ -74,8 +126,8 @@ pub Utf8Error :: enum {
 pub utf8_validate :: fn (s: string) -> void\Utf8Error {
     i : usize = 0
     for i < s.bytes {
-        (r, size) := utf8_decode(s[i..].as([]u8))
-        on r == 0xfffd => return InvalidByteSequence!
+        (_, size) := utf8_decode(s[i..].as([]u8))
+        on size == 0 => return InvalidByteSequence!
         i += size
     }
 }
@@ -86,69 +138,50 @@ pub utf8_validate :: fn (s: string) -> void\Utf8Error {
 pub utf8_decode :: fn (bytes: []u8) -> (Rune, usize) {
     on bytes.count == 0 => return (0xfffd.as(Rune), 0)
 
-    first_byte := bytes[0]
+    first_byte := bytes[0].as(u32)
+    on first_byte <= 0x7f                     => return (first_byte.as(Rune), 1)
+    on first_byte < 0xc2 || first_byte > 0xf4 => return (0xfffd.as(Rune), 0)
 
-    return on first_byte {
-        <= 0x7f => (first_byte.as(Rune), 1)
-
-        <= 0xdf => ${
-            break on bytes.count < 2 => ${
-                break (0xfffd.as(Rune), 1)
-            } else {
-                second_byte := bytes[1]
-                on second_byte < 0x80 ||
-                    second_byte > 0xbf => ${
-                    break (0xfffd.as(Rune), 1)
-                }
-                r := ((first_byte & 0x1f) << 6) | (second_byte & 0x3f)
-                break (r.as(Rune), 2)
-            }
-        }
-
-        <= 0xef => ${
-            break on bytes.count < 3 => ${
-                break (0xfffd.as(Rune), 1)
-            } else {
-                second_byte := bytes[1]
-                third_byte  := bytes[2]
-
-                on second_byte < 0x80 ||
-                    second_byte > 0xbf ||
-                    third_byte < 0x80 ||
-                    third_byte > 0xbf => ${
-                    break (0xfffd.as(Rune), 1)
-                }
-                r := ((first_byte & 0x0f) << 12) | ((second_byte & 0x3f) << 6) | (third_byte & 0x3f)
-                break (r.as(Rune), 3)
-            }
-        }
-
-        <= 0xf7 => ${
-            break on bytes.count < 4 => ${
-                break (0xfffd.as(Rune), 1)
-            } else {
-                second_byte := bytes[1]
-                third_byte  := bytes[2]
-                fourth_byte := bytes[3]
-
-                on second_byte < 0x80 ||
-                    second_byte > 0xbf ||
-                    third_byte < 0x80 ||
-                    third_byte > 0xbf ||
-                    fourth_byte < 0x80 ||
-                    fourth_byte > 0xbf => ${
-                    break (0xfffd.as(Rune), 1)
-                }
-                r := ((first_byte & 0x07) << 18) | ((second_byte & 0x3f) << 12) | ((third_byte & 0x3f) << 6) | (fourth_byte & 0x3f)
-                break (r.as(Rune), 4)
-            }
-        }
-
-        else => (0xfffd.as(Rune), 1)
+    size: usize = on first_byte {
+        <= 0xdf  => 2
+        <= 0xef  => 3
+        else     => 4
     }
+    on bytes.count < size => return (0xfffd.as(Rune), 0)
+
+    mask: u32 = on size {
+        2     => 0x1f
+        3     => 0x0f
+        else  => 0x07
+    }
+    r := first_byte & mask
+    for i in [1 .. size] {
+        byte := bytes[i].as(u32)
+        on byte < 0x80 || byte > 0xbf => return (0xfffd.as(Rune), 0)
+        r = (r << 6) | (byte & 0x3f)
+    }
+
+    rune := r.as(Rune)
+    on !rune.is_valid()           => return (0xfffd.as(Rune), 0)
+    on rune.utf8_length() != size => return (0xfffd.as(Rune), 0)
+    return (rune, size)
 }
 
 impl string {
+
+    -- Returns the terminal display width using the supported wide-character
+    -- ranges. Malformed UTF-8 bytes each count as one replacement character.
+    pub display_width :: fn (s: Self) -> i32 {
+        width : i32   = 0
+        i     : usize = 0
+
+        for i < s.bytes {
+            (r, size) := utf8_decode(s[i..].as([]u8))
+            width += r.display_width()
+            i     += on size == 0 => 1 else size
+        }
+        return width
+    }
 
     -- Return true if the string is empty.
     pub is_empty :: fn (s: Self) -> bool {
@@ -198,4 +231,130 @@ test "string.starts_with" {
         "Expected 'hello' to not start with 'lo'"
     assert "hello".starts_with("hello world") == no,
         "Expected 'hello' to not start with longer string"
+}
+
+test "utf8_decode" {
+    s                   := "A¢╭𐍈�"
+    expected : [5]Rune  = [0x41, 0xa2, 0x256d, 0x10348, 0xfffd]
+    lengths  : [5]usize = [1, 2, 3, 4, 3]
+    offset   : usize    = 0
+
+    for i in [0 .. expected.count] {
+        (r, size) := utf8_decode(s[offset..].as([]u8))
+        assert r == expected[i], "Expected the exact decoded Unicode scalar"
+        assert size == lengths[i], "Expected the UTF-8 byte count"
+        offset += size
+    }
+    assert utf8_decode(s[offset..].as([]u8)).1 == 0,
+        "Expected no bytes consumed at the end of the string"
+
+    bytes : [..]u8
+    defer bytes.free()
+    bytes.push(0xe2)
+    bytes.push(0x95)
+    bytes.push(0xad)
+    assert utf8_decode(bytes[..]).0 == 0x256d,
+        "Expected decoding to work with dynamic byte storage"
+}
+
+test "utf8_decode invalid sequences" {
+    -- Stray continuation, overlong forms, invalid continuation, surrogate,
+    -- out-of-range scalar and an invalid leading byte.
+    sequences: [8][4]u8 = [
+        [0x80, 0, 0, 0],
+        [0xc0, 0xaf, 0, 0],
+        [0xe0, 0x80, 0xaf, 0],
+        [0xf0, 0x80, 0x80, 0xaf],
+        [0xe2, 0x41, 0xad, 0],
+        [0xed, 0xa0, 0x80, 0],
+        [0xf4, 0x90, 0x80, 0x80],
+        [0xff, 0, 0, 0],
+    ]
+    for i in [0 .. sequences.count] {
+        bytes := sequences[i]
+        (r, size) := utf8_decode(bytes[..])
+        assert r == 0xfffd,
+            "Expected the replacement character for invalid UTF-8"
+        assert size == 0, "Expected invalid UTF-8 to consume no bytes"
+        assert !utf8_validate(bytes.as(string)),
+            "Expected validation to reject malformed UTF-8"
+    }
+
+    bytes : [4]u8 = [0xf0, 0x90, 0x8d, 0x88]
+    for size in [0 .. 4] {
+        assert utf8_decode(bytes[0..size]).1 == 0,
+            "Expected truncated UTF-8 to consume no bytes"
+    }
+}
+
+test "utf8_validate" {
+    assert !!utf8_validate(""), "Expected empty text to be valid UTF-8"
+    assert !!utf8_validate("A¢╭𐍈�"),
+        "Expected Unicode text including U+FFFD to be valid UTF-8"
+    assert "�hello�".starts_with("�"),
+        "Expected a valid replacement character prefix to match"
+    assert "�hello�".ends_with("�"),
+        "Expected a valid replacement character suffix to match"
+}
+
+test "Rune.utf8_encode" {
+    runes : [10]Rune =
+                       [0, 0x7f, 0x80, 0x7ff, 0x800, 0xd7ff, 0xe000, 0xffff, 0x10000, 0x10ffff]
+    for i in [0 .. runes.count] {
+        r              := runes[i]
+        output : [4]u8
+        size           := r.utf8_encode(output[..])
+
+        assert size == r.utf8_length(),
+            "Expected encoding to use the Rune's byte count"
+        assert utf8_decode(output[0..size]).0 == r,
+            "Expected UTF-8 encoding and decoding to preserve the Rune"
+    }
+    output : [4]u8
+    assert 0x256d.as(Rune).utf8_encode(output[..]) == 3,
+        "Expected three bytes for U+256D"
+    assert output[0] == 0xe2 && output[1] == 0x95 && output[2] == 0xad,
+        "Expected the UTF-8 bytes for U+256D"
+}
+
+test "Rune.utf8_encode invalid scalars and short output" {
+    invalid : [3]Rune = [0xd800, 0xdfff, 0x110000]
+    for i in [0 .. invalid.count] {
+        output : [4]u8
+        assert invalid[i].utf8_length() == 0,
+            "Expected invalid Unicode scalars to have no UTF-8 length"
+        assert invalid[i].utf8_encode(output[..]) == 3,
+            "Expected invalid Unicode scalars to encode as U+FFFD"
+        assert output[0] == 0xef && output[1] == 0xbf && output[2] == 0xbd,
+            "Expected the UTF-8 bytes for the replacement character"
+    }
+    for size in [0 .. 4] {
+        output : [4]u8 = [1, 2, 3, 4]
+        assert 0x10348.as(Rune).utf8_encode(output[0..size]) == 0,
+            "Expected encoding to fail when output is too short"
+        assert output == [1, 2, 3, 4],
+            "Expected short output to remain unchanged"
+    }
+}
+
+test "Rune.display_width" {
+    assert 0x41.as(Rune).display_width() == 1,
+        "Expected ASCII to occupy one column"
+    assert 0x754c.as(Rune).display_width() == 2,
+        "Expected a wide Rune to occupy two columns"
+    assert 0.as(Rune).display_width() == 0, "Expected NUL to occupy no columns"
+    assert 0x1f.as(Rune).display_width() == 0,
+        "Expected control characters to occupy no columns"
+}
+
+test "string.display_width" {
+    assert "".display_width() == 0, "Expected empty text to occupy no columns"
+    assert "ASCII".display_width() == 5,
+        "Expected one column per ASCII character"
+    assert "A界".display_width() == 3,
+        "Expected mixed narrow and wide characters to add their widths"
+    bytes : [3]u8 = [0xff, 0xe2, 0x41]
+    assert bytes.as(string).display_width() == 3,
+        "Expected malformed UTF-8 to make progress and count replacement "
+        +"characters"
 }

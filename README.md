@@ -3,6 +3,10 @@
 An independent standard library for Nerd, with local `core`, `std`, and `os`
 modules under `mods/`.
 
+Text and UTF-8 support live in `std.text`: `utf8_decode` and `utf8_validate`,
+`Rune.utf8_length`, `Rune.utf8_encode`, and display-width methods on `Rune` and
+`string`. The imported `std.utf8` module has been absorbed into this API.
+
 Install Nerd, Python 3, and `just`, then run:
 
 ```sh
