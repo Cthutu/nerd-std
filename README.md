@@ -47,6 +47,11 @@ nerd check examples/triangle/triangle.n
 Frame, OpenGL, UTF-8, time, core, and the two examples were imported from
 `Cthutu/nerd` at `c9caeead79f393624cde9fc362cbc1628e278a4b`. Linux X11/GLX and
 clock support are exported through the existing `os.linux` folder module.
-Windows window/WGL bindings are exported through `os.windows`, with the needed
-kernel types, key codes, and timing calls merged into `kernel32` alongside its
-existing memory APIs.
+Windows window/WGL bindings are exported through `os.windows`, with kernel APIs
+merged into `kernel32` alongside its existing memory APIs.
+
+The remaining original OS bindings were imported from Nerd `883494e1`:
+Linux file-descriptor, metadata, terminal, polling, process, and errno helpers;
+and Windows file, process, console, encoding, and error APIs. Linux retains
+this repo's complete syscall-number table. Platform declarations and tests are
+guarded by `on "linux"` or `on "windows"`.
