@@ -3,7 +3,7 @@
 An independent standard library for Nerd, with local `core`, `std`, and `os`
 modules under `mods/`.
 
-Text and UTF-8 support live in `std.text`: `utf8_decode` and `utf8_validate`,
+Text and UTF-8 support live in `std.text`: `utf8_decode` and `string.utf8_validate`,
 `Rune.utf8_length`, `Rune.utf8_encode`, and display-width methods on `Rune` and
 `string`. It also includes `split`, trimming, and temporary C-string conversion
 from the original `std.string`; split results own their array but borrow the

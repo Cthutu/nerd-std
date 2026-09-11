@@ -121,17 +121,6 @@ pub Utf8Error :: enum {
     UnexpectedEndOfInput
 }
 
--- Validates that a string is valid UTF-8.  Returns an error if the string is not
--- valid UTF-8.
-pub utf8_validate :: fn (s: string) -> void\Utf8Error {
-    i : usize = 0
-    for i < s.bytes {
-        (_, size) := utf8_decode(s[i..].as([]u8))
-        on size == 0 => return InvalidByteSequence!
-        i += size
-    }
-}
-
 -- Decodes a UTF-8 encoded byte slice into a Rune and returns the Rune and the
 -- number of bytes consumed.  If the byte slice is not valid UTF-8, returns the
 -- replacement character (U+FFFD) and the number of bytes as 0.
@@ -167,53 +156,23 @@ pub utf8_decode :: fn (bytes: []u8) -> (Rune, usize) {
     return (rune, size)
 }
 
--- Returns a view of `s` ending before the first zero byte.
---
--- This is useful for fixed buffers filled by C APIs. The returned string
--- borrows the same storage as `s`; no bytes are copied or validated.
-pub from_null_terminated :: fn (s: string) -> string {
-    end := s.bytes
-    for i: usize = 0; i < s.bytes; i += 1 {
-        on s.data[i] == 0 => {
-            end = i
-            break
-        }
-    }
-
-    return s[..end]
-}
-
 -- Returns true for a NUL byte or ASCII whitespace; not Unicode whitespace.
 string_is_trim_byte :: fn (byte: u8) -> bool {
     return byte == 0 || byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' || byte == 11 || byte == 12
 }
 
--- Returns a borrowed view with leading trimmable bytes removed.
-string_trim_start :: fn (s: string) -> string {
-    start : usize = 0
-
-    for start < s.bytes && string_is_trim_byte(s.data[start]) {
-        start += 1
-    }
-
-    return s[start..]
-}
-
--- Returns a borrowed view with trailing trimmable bytes removed.
-string_trim_end :: fn (s: string) -> string {
-    end := s.bytes
-
-    for end > 0 && string_is_trim_byte(s.data[end - 1]) {
-        end -= 1
-    }
-
-    return s[..end]
-}
-
--- Trims both ends using the same byte classification.
-string_trim :: fn (s: string) => string_trim_end(string_trim_start(s))
-
 impl string {
+
+    -- Validates that a string is valid UTF-8.  Returns an error if the string is not
+    -- valid UTF-8.
+    pub utf8_validate :: fn (s: Self) -> void\Utf8Error {
+        i : usize = 0
+        for i < s.bytes {
+            (_, size) := utf8_decode(s[i..].as([]u8))
+            on size == 0 => return InvalidByteSequence!
+            i += size
+        }
+    }
 
     -- Copies all bytes into temporary NUL-terminated storage for C APIs.
     -- The pointer is valid until the temporary arena is restored or reset.
@@ -263,21 +222,46 @@ impl string {
     }
 
     -- Returns a view with leading zero bytes and ASCII whitespace removed.
-    pub trim_start :: fn (s: Self) => string_trim_start(s)
+    pub trim_start :: fn (s: Self) -> string {
+        start : usize = 0
+        for start < s.bytes && string_is_trim_byte(s.data[start]) {
+            start += 1
+        }
+        return s[start..]
+    }
 
     -- Returns a view with trailing zero bytes and ASCII whitespace removed.
-    pub trim_end :: fn (s: Self) => string_trim_end(s)
+    pub trim_end :: fn (s: Self) -> string {
+        end := s.bytes
+        for end > 0 && string_is_trim_byte(s.data[end - 1]) {
+            end -= 1
+        }
+        return s[..end]
+    }
 
     -- Returns a view with leading and trailing zero bytes and ASCII whitespace
     -- removed.
-    pub trim :: fn (s: Self) => string_trim(s)
+    pub trim :: fn (s: Self) => s.trim_start().trim_end()
 
     -- Returns a view with leading and trailing zero bytes and ASCII whitespace
     -- removed.
-    pub trim_whitespace :: fn (s: Self) => string_trim(s)
+    pub trim_whitespace :: fn (s: Self) => s.trim()
 
-    -- Returns a view ending before the first zero byte.
-    pub trim_null_terminated :: fn (s: Self) => from_null_terminated(s)
+    -- Returns a view of `s` ending before the first zero byte.
+    --
+    -- This is useful for fixed buffers filled by C APIs. The returned string
+    -- borrows the same storage as `s`; no bytes are copied or validated.
+    pub trim_null_terminated :: fn (s: Self) -> string {
+        end := s.bytes
+        for i: usize = 0; i < s.bytes; i += 1 {
+            on s.data[i] == 0 => {
+                end = i
+                break
+            }
+        }
+
+        return s[..end]
+    }
 
     -- Returns the terminal display width using the supported wide-character
     -- ranges. Malformed UTF-8 bytes each count as one replacement character.
@@ -300,8 +284,8 @@ impl string {
 
     -- Return true if the string starts with the given prefix string.
     pub starts_with :: fn (s: Self, prefix: string) -> bool {
-        on !utf8_validate(s)      => return no
-        on !utf8_validate(prefix) => return no
+        on !s.utf8_validate()      => return no
+        on !prefix.utf8_validate() => return no
 
         on s.bytes < prefix.bytes => return no
 
@@ -314,8 +298,8 @@ impl string {
 
     -- Return true if the string ends with the given suffix string.
     pub ends_with :: fn (s: Self, suffix: string) -> bool {
-        on !utf8_validate(s)      => return no
-        on !utf8_validate(suffix) => return no
+        on !s.utf8_validate()      => return no
+        on !suffix.utf8_validate() => return no
 
         on s.bytes < suffix.bytes => return no
 
@@ -386,7 +370,7 @@ test "utf8_decode invalid sequences" {
         assert r == 0xfffd,
             "Expected the replacement character for invalid UTF-8"
         assert size == 0, "Expected invalid UTF-8 to consume no bytes"
-        assert !utf8_validate(bytes.as(string)),
+        assert !bytes.as(string).utf8_validate(),
             "Expected validation to reject malformed UTF-8"
     }
 
@@ -397,9 +381,9 @@ test "utf8_decode invalid sequences" {
     }
 }
 
-test "utf8_validate" {
-    assert !!utf8_validate(""), "Expected empty text to be valid UTF-8"
-    assert !!utf8_validate("A¢╭𐍈�"),
+test "string.utf8_validate" {
+    assert !!"".utf8_validate(), "Expected empty text to be valid UTF-8"
+    assert !!"A¢╭𐍈�".utf8_validate(),
         "Expected Unicode text including U+FFFD to be valid UTF-8"
     assert "�hello�".starts_with("�"),
         "Expected a valid replacement character prefix to match"
@@ -553,7 +537,7 @@ test "trim_whitespace is an alias for trim" {
     assert trimmed == "clean"
 }
 
-test "from_null_terminated trims at first zero byte" {
+test "string.trim_null_terminated trims at first zero byte" {
     bytes : [8]i8
     bytes[0] = 'O'
     bytes[1] = 'p'
@@ -564,7 +548,7 @@ test "from_null_terminated trims at first zero byte" {
     bytes[6] = 'L'
     bytes[7] = 0
 
-    trimmed := from_null_terminated(bytes.as(string))
+    trimmed := bytes.as(string).trim_null_terminated()
 
     assert trimmed == "Open"
 }
@@ -645,9 +629,9 @@ test "string trimming empty text and Unicode whitespace" {
 
 test "string NUL conversion boundaries" {
     bytes : [3]u8 = [0, 'x', 0]
-    assert from_null_terminated(bytes.as(string)) == "",
+    assert bytes.as(string).trim_null_terminated() == "",
         "Expected a leading NUL to produce an empty view"
-    assert from_null_terminated("") == "",
+    assert "".trim_null_terminated() == "",
         "Expected empty input to produce an empty view"
     c_empty := "".c_string()
     assert c_empty[0] == 0,
