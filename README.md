@@ -5,7 +5,16 @@ modules under `mods/`.
 
 Text and UTF-8 support live in `std.text`: `utf8_decode` and `utf8_validate`,
 `Rune.utf8_length`, `Rune.utf8_encode`, and display-width methods on `Rune` and
-`string`. The imported `std.utf8` module has been absorbed into this API.
+`string`. It also includes `split`, trimming, and temporary C-string conversion
+from the original `std.string`; split results own their array but borrow the
+input strings. `std.utf8` and `std.string` are absorbed into `std.text`.
+
+`std.memory` includes the original `std.mem` heap allocation, resizing, freeing,
+byte-unit and alignment helpers, and debug leak reporting. Allocated slices must
+be freed as whole allocations; `realloc` replaces the old slice. `print_leaks`
+has the same signature in debug and release builds and does nothing in release.
+Use `use std.memory` for calls with omitted default arguments; the current
+compiler does not retain those defaults when calling through a module alias.
 
 Install Nerd and `just`, then run:
 
